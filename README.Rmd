@@ -8,6 +8,16 @@ output:
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+## Load required packages
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(usmap)
+## Override verbosity defaults and default ggplot theme
+options(readr.show_col_types = FALSE)
+options(dplyr.summarise.inform = FALSE)
+theme_set(theme_bw())
 ```
 
 # A Naive 2022 Senate Forecast
@@ -33,6 +43,114 @@ This information comes in two flavors: the information I had beforehand and what
 This leads very naturally to a very simple Bayesian model, where we place a Beta prior on $\delta_i$, whose parameters are shaped by election returns from past Senate races in state $i$, and update our belief about $\delta_i$ using polls of the voters in state $i$ in the current election cycle.
 (Specifics about how the prior parameters are calculated from past election returns are given for the interested reader after the forecasting results are discussed).
 
+### Model "Validation"
+
+Since we have historical polls and election returns for the past couple cycles of Senate elections, we can go ahead and see how this naive model would have fared in 2018 and 2020 before seeing what its predictions for tomorrow will be.
+(I omitted some cases to avoid dealing with wrinkles for this simplified naive model; this is discussed at the end).
+
+```{r historical-model}
+## Read in historical Senate polls from FiveThirtyEight
+## (projects.fivethirtyeight.com/polls-page/data/senate_polls_historical.csv)
+historical_polls = read_csv("senate_polls_historical.csv")
+## Read in historical Senate results from MIT's Election Data Lab
+## (doi.org/10.7910/DVN/PEJ5QU)
+historical_results = read_csv("1976-2020-senate.csv")
+## Eliminate problematic cases
+historical_polls = historical_polls %>% 
+    filter(!(state %in% c("California", "Louisiana"))) %>% 
+    filter(!(race_id %in% c(7780, 7781))) %>% ## Warnock
+    filter(!(race_id %in% c(6271, 130))) ## pre-runoff Ossoff & Espy
+idx_to_fix = which(with(historical_results, 
+    year == 2020 & state == "WYOMING" & candidate == "CYNTHIA M. LUMMIS"
+))
+historical_results$party_simplified[idx_to_fix] = "REPUBLICAN"
+idx_to_fix = which(with(historical_results, 
+    year == 2020 & state == "WYOMING" & candidate == "MERAV BEN DAVID"
+))
+historical_results$party_simplified[idx_to_fix] = "DEMOCRAT"
+historical_results = historical_results %>% 
+    filter(!writein) %>% 
+    filter(candidate != "ERNEST J. PAGELS, JR.") %>% 
+    select(year, state, stage, special, candidatevotes, party_simplified) %>% 
+    filter(year >= 2010) %>% 
+    filter(party_simplified %in% c("DEMOCRAT", "REPUBLICAN")) %>% 
+    filter(!(state %in% c("CALIFORNIA", "LOUISIANA"))) %>% 
+    filter(!(special & year == 2020 & state == "GEORGIA"))
+## Calculate Democratic two party voteshare for each race
+historical_results = historical_results %>%
+    pivot_wider(names_from = party_simplified, values_from = candidatevotes) %>%
+    mutate(twoparty = DEMOCRAT / (DEMOCRAT + REPUBLICAN))
+## Calculate Democratic and Republican "votes" from each poll
+aggpolls = function(x) round(mean(x, na.rm = TRUE))
+historical_polls = historical_polls %>%
+    filter(party %in% c("DEM", "REP")) %>% 
+    filter(!is.na(sample_size)) %>% 
+    mutate(special = race_id %in% c(6268, 6209, 129)) %>% 
+    group_by(poll_id, party) %>% 
+    summarise(
+        year = first(as.numeric(paste0("20", gsub(".*/", "", election_date)))),
+        state = first(state),
+        special = first(special),
+        votes = (pct / 100) * sample_size
+    ) %>% 
+    pivot_wider(names_from = party, values_from = votes, values_fn = aggpolls)
+dat = historical_polls %>% 
+    na.omit() %>% 
+    group_by(year, state, special) %>% 
+    summarise(DEMOCRAT = sum(DEM), REPUBLICAN = sum(REP)) %>% 
+    mutate(state = toupper(state))
+dat$a = 0; dat$b = 0; dat$actual = 0
+for ( i in 1:nrow(dat) ) {
+    s = dat$state[i]
+    y = dat$year[i]
+    p = historical_results %>% filter(state == s & year < y) %>% pull(twoparty)
+    mu = mean(p)
+    s2 = var(p)
+    dat$a[i] = ( ((1 - mu) / s2) - (1 / mu) ) * mu^2
+    dat$b[i] = dat$a[i] * ( (1 / mu) - 1 )
+    r = historical_results %>%
+        filter(state == s & year == y & special == dat$special[i]) %>% 
+        pull(twoparty)
+    dat$actual[i] = r
+}
+dat = dat %>% 
+    mutate(estimate = (a + DEMOCRAT) / (a + b + DEMOCRAT + REPUBLICAN))
+```
+
+Surprisingly, the results are not *that* bad??
+The dashed line here represents if the estimated two party voteshare was *exactly* what we actually observed, so one thing to notice is the model does overestimate Democrats slightly since most of the points are just a bit on the upper-left side of that line, but the points do track the line pretty well actually.
+
+```{r historical-comparison}
+ggplot(data = dat, mapping = aes(x = actual, y = estimate)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+    geom_point(size = 2, alpha = 1/2, na.rm = TRUE) +
+    xlab("Actual Two Party Voteshare") +
+    ylab("Estimated Two Party Voteshare")
+```
+
+Here are how the races would have been classified vs the actual results:
+
+```{r historical-comparison-table}
+tab = dat %>% 
+    mutate(
+        Result = ifelse(actual > 0.5, "Dem won", "Dem lost"),
+        Prediction = ifelse(estimate > 0.5, "Dem won", "Dem lost")
+    )
+table(Result = tab$Result, Prediction = tab$Prediction)
+```
+
+This super simple model predicted `r sprintf("%0.1f%%", 100 * mean(tab$Result == tab$Prediction, na.rm = TRUE))` of 2018 and 2020 US Senate elections correctly LMAO.
+**BUT**, notice that all the errors were overestimating Democrats, so that's something to be wary of.
+For reference, here's how far off the predictions were in those classification misses:
+
+```{r check-out-historical-misses}
+tab = tab %>%
+    filter(Result != Prediction) %>% 
+    select(year, state, actual, estimate)
+names(tab) = c("Year", "State", "Actual voteshare", "Estimated voteshare")
+knitr::kable(tab)
+```
+
 ### Appendix: Setting the Prior Parameters
 
 A Beta distribution is defined by two parameters, $a$ and $b$.
@@ -51,3 +169,7 @@ $$
 respectively.
 
 So we can use *the method of moments* to set $a$ and $b$ for our Beta prior over $\delta_i$ by taking the election returns from the last $N$ (say 3) Senate elections in state $i$ and setting $\mu$ equal to their mean and $\sigma^2$ equal to their variance, then solving for $a$ and $b$ using the equations above.
+
+### Appendix: Omitted cases
+
+To avoid dealing with wrinkles in just what Democratic two party voteshare means in elections where there's multiple Democrats, I omit races in California, Louisiana, and the 2020 Georgia special.
