@@ -197,11 +197,16 @@ for ( i in 1:nrow(dat) ) {
 }
 dat = dat %>% 
     mutate(estimate = (a + DEMOCRAT) / (a + b + DEMOCRAT + REPUBLICAN))
+safe_d = 36 + 2 ## seats not up + CA + HI
+safe_r = 29 + 3 ## seats not up + LA + ND + ID
 ```
 
 ```{r map}
 plotdat = dat %>% ungroup() %>% select(state, estimate)
-addon = data.frame(state = c("CALIFORNIA", "LOUISIANA"), estimate = c(1, 0))
+addon = data.frame(
+    state = c("CALIFORNIA", "LOUISIANA", "IDAHO", "HAWAII", "NORTH DAKOTA"),
+    estimate = c(1, 0, 0, 1, 0)
+)
 plotdat = rbind(plotdat, addon)
 plot_usmap(data = plotdat, values = "estimate") +
     scale_fill_gradient2(
@@ -212,7 +217,9 @@ plot_usmap(data = plotdat, values = "estimate") +
     )
 ```
 
-We'd end up with `r sum(dat$estimate > 0.5) + 37` Democrats in the Senate and `r sum(dat$estimate <= 0.5) + 30` Republicans in the Senate... at least just looking at the point estimates alone and using 0.5 as the prediction cutoff.
+(The completely solid red or blue states were states that could not be estimated by this model due to data issues such as lack of polling, but there is also a very strong consensus on the outcome in those states so I treated them as a particular party winning them with probability 1).
+
+We'd end up with `r sum(dat$estimate > 0.5) + safe_d` Democrats in the Senate and `r sum(dat$estimate <= 0.5) + safe_r` Republicans in the Senate... at least just looking at the point estimates alone and using 0.5 as the prediction cutoff.
 However, just like with all the other models of this election, this naive model gives lots of close races; here are the 10 closest according to this model:
 
 ```{r tbl}
@@ -237,7 +244,7 @@ seats = numeric(nsamples)
 set.seed(138)
 for ( s in 1:nsamples ) {
     shares = sapply(1:nrow(dat), function(i) rbeta(1, dat$A[i], dat$B[i]))
-    seats[s] = sum(shares > 0.5) + 37
+    seats[s] = sum(shares > 0.5) + safe_d
 }
 histdat = data.frame(seats = seats)
 ggplot(data = histdat, mapping = aes(x = seats)) +
@@ -254,10 +261,11 @@ histdat %>%
     knitr::kable()
 ```
 
-So the modal outcome of this model, by far, is the Dems keeping the Senate, 50-50.
+Unsurprisingly, there's less uncertainty in this model than some others given its almost total lack of sophistication.
+The modal outcome of this model, by far, is the Dems keeping the Senate, and even gaining a seat, up to 51-49.
 But Dems ending up with more than that is quite a rare outcome of this model.
 
-...And the model overestimated Dems by just a little in the last two cycles... 😬️
+...And the model overestimated Dems by just a little in the last two cycles... so it's gonna be a nail-biter 😬️
 
 ## Appendices
 

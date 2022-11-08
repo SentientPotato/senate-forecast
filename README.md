@@ -76,7 +76,12 @@ we get?
 
 ![](README_files/figure-gfm/map-1.png)<!-- -->
 
-We’d end up with 50 Democrats in the Senate and 47 Republicans in the
+(The completely solid red or blue states were states that could not be
+estimated by this model due to data issues such as lack of polling, but
+there is also a very strong consensus on the outcome in those states so
+I treated them as a particular party winning them with probability 1).
+
+We’d end up with 51 Democrats in the Senate and 49 Republicans in the
 Senate… at least just looking at the point estimates alone and using 0.5
 as the prediction cutoff. However, just like with all the other models
 of this election, this naive model gives lots of close races; here are
@@ -104,17 +109,19 @@ outcomes according to the model:
 
 | Dem-held seats | N Simulations |
 |---------------:|--------------:|
-|             48 |            24 |
-|             49 |          9017 |
-|             50 |         30749 |
-|             51 |           210 |
+|             49 |            24 |
+|             50 |          9017 |
+|             51 |         30749 |
+|             52 |           210 |
 
-So the modal outcome of this model, by far, is the Dems keeping the
-Senate, 50-50. But Dems ending up with more than that is quite a rare
+Unsurprisingly, there’s less uncertainty in this model than some others
+given its almost total lack of sophistication. The modal outcome of this
+model, by far, is the Dems keeping the Senate, and even gaining a seat,
+up to 51-49. But Dems ending up with more than that is quite a rare
 outcome of this model.
 
 …And the model overestimated Dems by just a little in the last two
-cycles… 😬️
+cycles… so it’s gonna be a nail-biter 😬️
 
 ## Appendices
 
