@@ -15,6 +15,8 @@ $$
 \delta \triangleq \dfrac{\text{Number of Democratic Votes}}{\text{Number of Democratic Votes} + \text{Number of Republican Votes}}.
 $$
 
+## The Model
+
 Now like I said, for kicks I’m going to try to forecast
 *δ*<sub>*i*</sub> for each state *i* where there’s a Senate race in a
 very unsophisticated way: Specifically, I’m only going to use
@@ -29,7 +31,7 @@ state *i* in the current election cycle. (Specifics about how the prior
 parameters are calculated from past election returns are given for the
 interested reader after the forecasting results are discussed).
 
-### Model “Validation”
+## Model “Validation”
 
 Since we have historical polls and election returns for the past couple
 cycles of Senate elections, we can go ahead and see how this naive model
@@ -67,7 +69,56 @@ classification misses:
 | 2020 | MAINE          |        0.4539646 |           0.5113481 |
 | 2020 | NORTH CAROLINA |        0.4908670 |           0.5261374 |
 
-### Appendix: Setting the Prior Parameters
+## The 2022 Senate Forecast
+
+Okay, so if we were to apply this method to the 2022 races, what would
+we get?
+
+![](README_files/figure-gfm/map-1.png)<!-- -->
+
+We’d end up with 50 Democrats in the Senate and 47 Republicans in the
+Senate… at least just looking at the point estimates alone and using 0.5
+as the prediction cutoff. However, just like with all the other models
+of this election, this naive model gives lots of close races; here are
+the 10 closest according to this model:
+
+| State          | Estimated Dem Voteshare |
+|:---------------|------------------------:|
+| Nevada         |                    0.50 |
+| Georgia        |                    0.51 |
+| Wisconsin      |                    0.49 |
+| Ohio           |                    0.49 |
+| North Carolina |                    0.49 |
+| New Hampshire  |                    0.52 |
+| Pennsylvania   |                    0.52 |
+| Indiana        |                    0.47 |
+| Arizona        |                    0.53 |
+| Florida        |                    0.47 |
+
+So, we can do the usual thing that these modellers do and simulate a
+whole bunch of election outcomes from the model and then summarize them
+for you to get a sense of the uncertainty and the likely range of
+outcomes according to the model:
+
+![](README_files/figure-gfm/simulation-1.png)<!-- -->
+
+| Dem-held seats | N Simulations |
+|---------------:|--------------:|
+|             48 |            24 |
+|             49 |          9017 |
+|             50 |         30749 |
+|             51 |           210 |
+
+So the modal outcome of this model, by far, is the Dems keeping the
+Senate, 50-50. But Dems ending up with more than that is quite a rare
+outcome of this model.
+
+…And the model overestimated Dems by just a little in the last two
+cycles… 😬️
+
+## Appendices
+
+### Setting the Prior Parameters
 
 A Beta distribution is defined by two parameters, *a* and *b*. The mean
 and variance of a Beta distribution are given by
@@ -90,7 +141,7 @@ last *N* (say 3) Senate elections in state *i* and setting *μ* equal to
 their mean and *σ*<sup>2</sup> equal to their variance, then solving for
 *a* and *b* using the equations above.
 
-### Appendix: Omitted cases
+### Omitted cases
 
 To avoid dealing with wrinkles in just what Democratic two party
 voteshare means in elections where there’s multiple Democrats, I omit

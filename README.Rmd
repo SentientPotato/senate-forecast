@@ -37,13 +37,15 @@ $$
 \delta \triangleq \dfrac{\text{Number of Democratic Votes}}{\text{Number of Democratic Votes} + \text{Number of Republican Votes}}.
 $$
 
+## The Model
+
 Now like I said, for kicks I'm going to try to forecast $\delta_i$ for each state $i$ where there's a Senate race in a very unsophisticated way:
 Specifically, I'm only going to use information voters have given me about whether they prefer to vote for the Democrat or the Republican.
 This information comes in two flavors: the information I had beforehand and what I've learned through the campaign.
 This leads very naturally to a very simple Bayesian model, where we place a Beta prior on $\delta_i$, whose parameters are shaped by election returns from past Senate races in state $i$, and update our belief about $\delta_i$ using polls of the voters in state $i$ in the current election cycle.
 (Specifics about how the prior parameters are calculated from past election returns are given for the interested reader after the forecasting results are discussed).
 
-### Model "Validation"
+## Model "Validation"
 
 Since we have historical polls and election returns for the past couple cycles of Senate elections, we can go ahead and see how this naive model would have fared in 2018 and 2020 before seeing what its predictions for tomorrow will be.
 (I omitted some cases to avoid dealing with wrinkles for this simplified naive model; this is discussed at the end).
@@ -151,7 +153,115 @@ names(tab) = c("Year", "State", "Actual voteshare", "Estimated voteshare")
 knitr::kable(tab)
 ```
 
-### Appendix: Setting the Prior Parameters
+## The 2022 Senate Forecast
+
+Okay, so if we were to apply this method to the 2022 races, what would we get?
+
+```{r current-model}
+## Read in current Senate polls from FiveThirtyEight
+## (projects.fivethirtyeight.com/polls-page/data/senate_polls.csv)
+current_polls = read_csv("senate_polls.csv")
+## Eliminate problematic cases
+current_polls = current_polls %>%
+    filter(!(state %in% c("California", "Louisiana"))) %>% 
+    filter(cycle == 2022)
+## Calculate Democratic and Republican "votes" from each poll
+aggpolls = function(x) round(mean(x, na.rm = TRUE))
+current_polls = current_polls %>%
+    filter(stage != "jungle primary") %>% 
+    filter(party %in% c("DEM", "REP")) %>% 
+    filter(!is.na(sample_size)) %>% 
+    mutate(special = race_id %in% c(9480, 9482)) %>% 
+    group_by(poll_id, party) %>% 
+    summarise(
+        year = first(as.numeric(paste0("20", gsub(".*/", "", election_date)))),
+        state = first(state),
+        special = first(special),
+        votes = (pct / 100) * sample_size
+    ) %>% 
+    pivot_wider(names_from = party, values_from = votes, values_fn = aggpolls)
+dat = current_polls %>% 
+    na.omit() %>% 
+    group_by(year, state, special) %>% 
+    summarise(DEMOCRAT = sum(DEM), REPUBLICAN = sum(REP)) %>% 
+    mutate(state = toupper(state))
+dat$a = 0; dat$b = 0
+for ( i in 1:nrow(dat) ) {
+    s = dat$state[i]
+    y = dat$year[i]
+    p = historical_results %>% filter(state == s & year < y) %>% pull(twoparty)
+    mu = mean(p, na.rm = TRUE)
+    s2 = var(p, na.rm = TRUE)
+    dat$a[i] = ( ((1 - mu) / s2) - (1 / mu) ) * mu^2
+    dat$b[i] = dat$a[i] * ( (1 / mu) - 1 )
+}
+dat = dat %>% 
+    mutate(estimate = (a + DEMOCRAT) / (a + b + DEMOCRAT + REPUBLICAN))
+```
+
+```{r map}
+plotdat = dat %>% ungroup() %>% select(state, estimate)
+addon = data.frame(state = c("CALIFORNIA", "LOUISIANA"), estimate = c(1, 0))
+plotdat = rbind(plotdat, addon)
+plot_usmap(data = plotdat, values = "estimate") +
+    scale_fill_gradient2(
+        low  = "firebrick3",
+        mid  = "white",
+        high = "dodgerblue4",
+        midpoint = 0.5
+    )
+```
+
+We'd end up with `r sum(dat$estimate > 0.5) + 37` Democrats in the Senate and `r sum(dat$estimate <= 0.5) + 30` Republicans in the Senate... at least just looking at the point estimates alone and using 0.5 as the prediction cutoff.
+However, just like with all the other models of this election, this naive model gives lots of close races; here are the 10 closest according to this model:
+
+```{r tbl}
+dat %>% 
+    ungroup() %>% 
+    mutate(state = tools::toTitleCase(tolower(state))) %>%
+    mutate(closeness = abs(0.5 - estimate)) %>% 
+    arrange(closeness) %>% 
+    select(state, estimate) %>% 
+    rename(State = state) %>% 
+    rename(`Estimated Dem Voteshare` = estimate) %>% 
+    head(10) %>% 
+    knitr::kable(digits = 2)
+```
+
+So, we can do the usual thing that these modellers do and simulate a whole bunch of election outcomes from the model and then summarize them for you to get a sense of the uncertainty and the likely range of outcomes according to the model:
+
+```{r simulation}
+dat = dat %>% mutate(A = a + DEMOCRAT, B = b + REPUBLICAN)
+nsamples = 40000 ## I'll do 40,000 like everyone else I guess lol
+seats = numeric(nsamples)
+set.seed(138)
+for ( s in 1:nsamples ) {
+    shares = sapply(1:nrow(dat), function(i) rbeta(1, dat$A[i], dat$B[i]))
+    seats[s] = sum(shares > 0.5) + 37
+}
+histdat = data.frame(seats = seats)
+ggplot(data = histdat, mapping = aes(x = seats)) +
+    geom_bar(fill = "dodgerblue4") +
+    xlab("Number of Senate seats held by Democrats") +
+    ylab("Number of simulations (out of 40,000)")
+```
+
+```{r simulation-tab}
+histdat %>%
+    rename(`Dem-held seats` = seats) %>% 
+    group_by(`Dem-held seats`) %>%
+    summarise(`N Simulations` = n()) %>% 
+    knitr::kable()
+```
+
+So the modal outcome of this model, by far, is the Dems keeping the Senate, 50-50.
+But Dems ending up with more than that is quite a rare outcome of this model.
+
+...And the model overestimated Dems by just a little in the last two cycles... 😬️
+
+## Appendices
+
+### Setting the Prior Parameters
 
 A Beta distribution is defined by two parameters, $a$ and $b$.
 The mean and variance of a Beta distribution are given by
@@ -170,6 +280,6 @@ respectively.
 
 So we can use *the method of moments* to set $a$ and $b$ for our Beta prior over $\delta_i$ by taking the election returns from the last $N$ (say 3) Senate elections in state $i$ and setting $\mu$ equal to their mean and $\sigma^2$ equal to their variance, then solving for $a$ and $b$ using the equations above.
 
-### Appendix: Omitted cases
+### Omitted cases
 
 To avoid dealing with wrinkles in just what Democratic two party voteshare means in elections where there's multiple Democrats, I omit races in California, Louisiana, and the 2020 Georgia special.
